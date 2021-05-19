@@ -50,7 +50,7 @@ end
 --matchtable = 2459AEHIORSTUZaehiorstuz
 --0: no coda
 --1: has coda 'ㄹ'
---2: has coda that's not 'ㄹ'
+--2: has coda but not 'ㄹ'
 local function PPhandler(keyword)
 	local matchtable1 = {49, 55, 56, 76, 108}
 	local matchtable2 = {
@@ -77,10 +77,10 @@ end
 
 local function replacePP(str, pattern, name)
     local pptable = {
-		{'는','은'}, {'가','이'}, {'를','을'},
-		{'와','과'}, {'랑','이랑'}, {'고','이고'},
-		{'야','아'}, {'여','이여'}, {'랑','이랑'},
-		{'다','이다'}}
+	    {'는','은'}, {'가','이'}, {'를','을'},
+	    {'와','과'}, {'랑','이랑'}, {'고','이고'},
+	    {'야','이야'}, {'여','이여'}, {'랑','이랑'},
+		{'다', '이다'}}
 	if PPhandler(name) ~= 2 then
 	   str = str:gsub(pattern .. "으", pattern .. "")
     end
