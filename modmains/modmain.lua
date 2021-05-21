@@ -17,9 +17,11 @@ function GetFromSpeechesHash(message, char)
 	local function GetMentioned(message,char)
 		if not (message and SpeechHashTbl[char] and SpeechHashTbl[char]["mentioned_class"] and type(SpeechHashTbl[char]["mentioned_class"])=="table") then return nil end
 		for i,v in pairs(SpeechHashTbl[char]["mentioned_class"]) do
-			local mentions={string.match(message,"^"..(string.gsub(i,"%%s","(.*)")).."$")}
+			local pattern = string.gsub(i,"%%s","(.*)")
+			pattern = string.gsub(pattern,"{([^%s]*)}","(.*)")
+			local mentions={string.match(message,"^"..pattern.."$")}
 			if mentions and #mentions>0 then
-				return v, mentions --translation with formatting reference
+				return v, mentions --formatting reference for translation
 			end
 		end
 		return nil
@@ -41,9 +43,9 @@ function GetFromSpeechesHash(message, char)
 	return message, mentions
 end
 
--- splits a string by designated character. ex: split("asd/f","/") -> "asd", "f"
+-- splits a string by separator. ex: split("asd/f","/") -> "asd", "f"
 local function split(str,sep)
-		local fields, first = {}, 1
+	local fields, first = {}, 1
 	str=str..sep
 	for i=1,#str do
 		if string.sub(str,i,i+#sep-1)==sep then
@@ -51,10 +53,10 @@ local function split(str,sep)
 			first=i+#sep
 		end
 	end
-		return fields
+	return fields
 end
 
--- work in progress. related to Mumsy speech
+-- work in progress. related to Mumsy speech. Not sure if it works
 local function GetMentioned1(message)
 	for i,v in pairs(SpeechHashTbl.GOATMUM_CRAVING_HINTS.Tr) do
 		local regex=string.gsub(i,"%.","%%.")
@@ -74,43 +76,43 @@ end
 function KOTranslater(message, entity)
 	if not (entity and entity.prefab and entity.components.talker and type(message)=="string") then return message end
 	
---	local new_line = string.find(message,"\n",1,true)
---	if new_line ~= nil then
---		local mess1 =message:sub(1, new_line - 1)
---		if mod_phrases[mess1] then
---			local mess2 = message:sub(new_line)
---			return mod_phrases[mess1] .. mess2
---		end
---	elseif mod_phrases[message] then
---		return mod_phrases[message]
---	end
---	
---	if entity.prefab == 'quagmire_goatmum' then
---		if SpeechHashTbl.GOATMUM_WELCOME_INTRO.Tr[message] then
---			return SpeechHashTbl.GOATMUM_WELCOME_INTRO.Tr[message]
---		end
---		
---		local NotTranslated=message
---		local msg, mentions=GetMentioned1(message)
---		message=msg or message
---		
---		if NotTranslate==message then return end
---		local part2
---		local craving
---		if mentions and #mentions>0 and mentions[1] then
---			craving=SpeechHashTbl.GOATMUM_CRAVING_MAP.Tr[mentions[1]]
---			if #mentions>1 then
---				part2=SpeechHashTbl.GOATMUM_CRAVING_HINTS_PART2.Tr[mentions[2]]
---			end
-	--		message = replacePP(message,"{craving}",craving)
-	--		if #mentions==1 and craving then
-	--			message=string.format(message,craving)
-	--		elseif #mentions==2 and craving and part2 then
-		--		message=string.format(message,craving,part2)
-			--end
-		--end
-		--return message
-	--end
+	local new_line = string.find(message,"\n",1,true)
+	if new_line ~= nil then
+		local mess1 = message:sub(1, new_line - 1)
+		if mod_phrases[mess1] then
+			local mess2 = message:sub(new_line)
+			return mod_phrases[mess1] .. mess2
+		end
+	elseif mod_phrases[message] then
+		return mod_phrases[message]
+	end
+	
+	if entity.prefab == 'quagmire_goatmum' then
+		if SpeechHashTbl.GOATMUM_WELCOME_INTRO.Tr[message] then
+			return SpeechHashTbl.GOATMUM_WELCOME_INTRO.Tr[message]
+		end
+		
+		local NotTranslated=message
+		local msg, mentions=GetMentioned1(message)
+		message=msg or message
+		
+		if NotTranslate==message then return end
+		local part2
+		local craving
+		if mentions and #mentions>0 and mentions[1] then
+			craving=SpeechHashTbl.GOATMUM_CRAVING_MAP.Tr[mentions[1]]
+			if #mentions>1 then
+				part2=SpeechHashTbl.GOATMUM_CRAVING_HINTS_PART2.Tr[mentions[2]] or SpeechHashTbl.GOATMUM_CRAVING_HINTS_PART2_IMPATIENT.Tr[mentions[2]]
+			end
+			message = pp.replacePP(message,"{craving}",craving)
+			if #mentions==1 and craving then
+				message=string.format(message,craving)
+			elseif #mentions==2 and craving and part2 then
+				message=string.format(message,craving,part2)
+			end
+		end
+		return message
+	end
 	if entity:HasTag("Playerghost") then
 		message=string.gsub(message,"ohh","오")
 		message=string.gsub(message,"oh","우")
@@ -134,7 +136,7 @@ function KOTranslater(message, entity)
 		--Получаем перевод реплики и список отсылок %s, если они есть в реплике
 		if not message then return end
 		local NotTranslated=message
-		local msg, mentions=t.GetFromSpeechesHash(message,entity)
+		local msg, mentions=GetFromSpeechesHash(message,entity)
 		message=msg or message
 
 		local killerkey
@@ -142,16 +144,49 @@ function KOTranslater(message, entity)
 			if #mentions>1 then
 				killerkey=SpeechHashTbl.NAMES.Key[mentions[2]] --Получаем ключ имени убийцы
 				if not killerkey and entity=="WX78" then --тут только полный перебор, т.к. он говорит всё в верхнем регистре
-					for eng, key in pairs(t.SpeechHashTbl.NAMES.Key) do
+					for eng, key in pairs(SpeechHashTbl.NAMES.Key) do
 						if eng:upper()==mentions[2] then killerkey = key break end
 					end
 				end
-				mentions[2]=killerkey and STRINGS.NAMES[killerkey] or mentions[2]
-				if table.contains(_G.GetActiveCharacterList(), killerkey) then killerkey=nil end
+				mentions[2]=killerkey and po[killerkey] or mentions[2]
+				if killerkey then
+					killerkey=killerkey:lower()
 				end
+				if table.contains(_G.GetActiveCharacterList(), killerkey) then killerkey=nil end
 			end
 		end
+		message=string.format(message, _G.unpack(mentions or {"","","",""}))
+		return message
+	end
 	
+	local messages=split(message,"\n") or {message}
+	message=""
+	local i=1
+	while i<=#messages do
+		local trans
+		trans=TranslateMessage(messages[i])
+		if trans~=messages[i] then
+			message=message..(i>1 and "\n" or "")..trans
+			if i<#messages then
+				message=message..TranslateMessage("\n"..messages[i+1])
+				for k=i+2,#messages do message=message.."\n"..messages[k] end
+			end
+			break
+		elseif i<#message then
+			trans=TranslateMessage(messages[i].."\n"..messages[i+1])
+			if trans~=messages[i].."\n"..messages[i+1] then
+				message=message..(i>1 and "\n" or "")..trans
+				for k=i+2,#messages do message=message.."\n"..messages[k] end
+				break
+			else
+				message=message..(i>1 and "\n" or "")..messages[i]
+				i=i+1
+			end
+		else
+			message=message..(i>1 and "\n" or "")..messages[i]
+			break
+		end
+	end
 	return message
 end
 
