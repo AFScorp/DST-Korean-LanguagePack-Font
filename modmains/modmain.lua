@@ -4,9 +4,9 @@ local rawget = _G.rawget
 local TheNet = _G.TheNet
 local STRINGS = _G.STRINGS
 
---Text Hooker codes from Russification Pack
+--Text Hooker codes based on Russification Pack
 --credit for Cunning fox and his team
---Special thanks for 'Yukari' of DC DST Gallery for Sketch & Blueprint code
+--Special thanks for 'Yukari' of DCInside DST Gallery for assistance in Sketch & Blueprint name output code
 LoadPOFile("ko.po", "ko")
 po = _G.LanguageTranslator.languages["ko"]
 SpeechHashTbl={}
@@ -18,10 +18,10 @@ function GetFromSpeechesHash(message, char)
 		if not (message and SpeechHashTbl[char] and SpeechHashTbl[char]["mentioned_class"] and type(SpeechHashTbl[char]["mentioned_class"])=="table") then return nil end
 		for i,v in pairs(SpeechHashTbl[char]["mentioned_class"]) do
 			local pattern = string.gsub(i,"%%s","(.*)")
-			pattern = string.gsub(pattern,"{([^%s]*)}","(.*)")
-			local mentions={string.match(message,"^"..pattern.."$")}
+			pattern = string.gsub(pattern,"%b{}","(.*)")
+			local mentions = {string.match(message,"^"..pattern.."$")}
 			if mentions and #mentions>0 then
-				return v, mentions --formatting reference for translation
+				return v:gsub("(%b{})","%%s"), mentions --formatting reference for translation
 			end
 		end
 		return nil
@@ -47,11 +47,8 @@ end
 local function split(str,sep)
 	local fields, first = {}, 1
 	str=str..sep
-	for i=1,#str do
-		if string.sub(str,i,i+#sep-1)==sep then
-			fields[#fields+1]=(i<=first) and "" or string.sub(str,first,i-1)
-			first=i+#sep
-		end
+	for word in string.gmatch(str,"([^"..sep.."]+)") do
+		table.insert(fields, word)
 	end
 	return fields
 end
@@ -64,7 +61,7 @@ local function GetMentioned1(message)
 		regex=string.gsub(regex,"{part2}","(.+)")
 		-- print(regex)
 		local mentions={string.match(message,"^"..(regex).."$")}
-		if mentions and #mentions>0 and  string.find(mentions[1],'%.%.%.')==nil then
+		if mentions and #mentions>0 and string.find(mentions[1],'%.%.%.')==nil then
 			 print(v,mentions[1])
 			 if #mentions>1 then print(mentions[2]) end
 			return v, mentions --возвращаем перевод (с незаменёнными %s) и список отсылок
@@ -135,7 +132,7 @@ function KOTranslater(message, entity)
 	local function TranslateMessage(message)
 		--Получаем перевод реплики и список отсылок %s, если они есть в реплике
 		if not message then return end
-		local NotTranslated=message
+	--	local NotTranslated=message
 		local msg, mentions=GetFromSpeechesHash(message,entity)
 		message=msg or message
 
@@ -159,37 +156,48 @@ function KOTranslater(message, entity)
 		return message
 	end
 	
+	--Processing multi-line speeches.
+	--this proscess is also for the sake of compatibility with mods that inserts string by '\n'
 	local messages=split(message,"\n") or {message}
 	message=""
 	local i=1
 	while i<=#messages do
-		local trans
-		trans=TranslateMessage(messages[i])
-		if trans~=messages[i] then
+		local trans, str
+		str=messages[i]..(messages[i+1] and "\n"..messages[i+1] or "")..(messages[i+2] and "\n"..messages[i+2] or "") --first attempt in 3 rows in once.
+		trans=TranslateMessage(str)
+		if trans~=str then  --first attempt successful
 			message=message..(i>1 and "\n" or "")..trans
-			if i<#messages then
-				message=message..TranslateMessage("\n"..messages[i+1])
-				for k=i+2,#messages do message=message.."\n"..messages[k] end
-			end
-			break
-		elseif i<#message then
-			trans=TranslateMessage(messages[i].."\n"..messages[i+1])
-			if trans~=messages[i].."\n"..messages[i+1] then
+			i=i+3
+		elseif i<#messages then  --translation not found: second attempt in a single row
+			str=messages[i]
+			trans=TranslateMessage(str)
+			if trans~=str then
 				message=message..(i>1 and "\n" or "")..trans
-				for k=i+2,#messages do message=message.."\n"..messages[k] end
-				break
-			else
-				message=message..(i>1 and "\n" or "")..messages[i]
-				i=i+1
+				if i<#messages then  --thus the next line is something like announce_canfix
+					message=message..TranslateMessage("\n"..messages[i+1])
+					for k=i+2,#messages do message=message.."\n"..messages[k] end
+					break
+				end
+			else  --single row is not a complete speech line: last attempt in 2 rows
+				str=str.."\n"..(messages[i+1] or "")
+				trans=TranslateMessage(str)
+				if str~=trans then
+					message = message..(i>1 and "\n" or "")..trans
+					i=i+2
+				else
+					message = message..(i>1 and "\n" or "")..messages[i]
+					i=i+1
+				end
 			end
 		else
 			message=message..(i>1 and "\n" or "")..messages[i]
-			break
+			i=i+1
 		end
 	end
 	return message
 end
-
+			
+	
 if rawget(_G,"Networking_Talk") then
 	local OldNetworking_Talk=_G.Networking_Talk
 
@@ -202,29 +210,6 @@ if rawget(_G,"Networking_Talk") then
 	_G.Networking_Talk=Networking_Talk
 end
 
-if TheNet.Talker then
-	_G.getmetatable(TheNet).__index.Talker = (function()
-		local oldTalker = _G.getmetatable(TheNet).__index.Talker
-		return function(self, message, entity, ... )
-			oldTalker(self, message, entity, ...)
- 
-			local inst=entity and entity:GetGUID() or nil
-			inst=inst and _G.Ents[inst] or nil --определяем инстанс персонажа по entity
-			if inst and inst.components.talker.widget then --если он может говорить
-				if message and type(message)=="string" then
-					--Делаем одноразовую подмену для последующего задания текста, в котором осуществляем перевод.
-					local OldSetString = inscomponents.talker.widgetexSetString
-					function inst.components.talker.widgetext:SetString(str, ...)
-						str = KOTranslater(str, inst) or str --переводим
-						OldSetString(self, str, ...)
-						self.SetString = OldSetString
-					end
-				end
-			end
-		end
-	end)()
-end
-
 function BuildCharacterHash(charname, kosource)
 	local source = kosource or po
 	local function CreateHashTable(hashtbl,tbl,str)
@@ -234,7 +219,7 @@ function BuildCharacterHash(charname, kosource)
 			else
 				local val=source[str.."."..i] or val
 				
-				if v and string.find(v,"%s",1,true) then
+				if v and (string.match(v,"%%s") or string.match(v,"%b{}")) then
 					hashtbl["mentioned_class"]=hashtbl["mentioned_class"] or {}
 					hashtbl["mentioned_class"][v]=val
 				end
@@ -321,8 +306,8 @@ for i,v in pairs(STRINGS.GOATMUM_CRAVING_HINTS_PART2) do
 	po["STRINGS.GOATMUM_CRAVING_HINTS_PART2."..i]=nil
 end
 for i,v in pairs(STRINGS.GOATMUM_CRAVING_HINTS_PART2_IMPATIENT) do
-	SpeechHashTbl.GOATMUM_CRAVING_HINTS_PART2.Tr[v]=po["STRINGS.GOATMUM_CRAVING_HINTS_PART2_IMPATIEN"..i] or v
-	po["STRINGS.GOATMUM_CRAVING_HINTS_PART2_IMPATIEN"..i]=nil
+	SpeechHashTbl.GOATMUM_CRAVING_HINTS_PART2.Tr[v]=po["STRINGS.GOATMUM_CRAVING_HINTS_PART2_IMPATIENT."..i] or v
+	po["STRINGS.GOATMUM_CRAVING_HINTS_PART2_IMPATIENT."..i]=nil
 end
 
 SpeechHashTbl.GOATMUM_CRAVING_MAP={Tr={}}
@@ -338,8 +323,8 @@ for i,v in pairs(STRINGS.GOATMUM_WELCOME_INTRO) do
 	po["STRINGS.GOATMUM_WELCOME_INTRO."..i]=nil
 end
 for i,v in pairs(STRINGS.GOATMUM_LOST) do
-	SpeechHashTbl.GOATMUM_WELCOME_INTRO.Tr[v]=po["STRINGS.GOATMUM_LOS"..i] or v
-	po["STRINGS.GOATMUM_LOS"..i]=nil
+	SpeechHashTbl.GOATMUM_WELCOME_INTRO.Tr[v]=po["STRINGS.GOATMUM_LOST."..i] or v
+	po["STRINGS.GOATMUM_LOST."..i]=nil
 end
 for i,v in pairs(STRINGS.GOATMUM_VICTORY) do
 	SpeechHashTbl.GOATMUM_WELCOME_INTRO.Tr[v]=po["STRINGS.GOATMUM_VICTORY."..i] or v
@@ -374,7 +359,7 @@ function GetDisplayNameNew(self, act)
 	
 	
 	if name and self.prefab then
-		if self. prefab=="pigman" then
+		if self.prefab=="pigman" then
 			name=SpeechHashTbl.PIGNAMES.Tr[name] or name
 		elseif self.prefab=="pigguard" then
 			name=SpeechHashTbl.PIGNAMES.Tr[name] or name
@@ -388,6 +373,28 @@ function GetDisplayNameNew(self, act)
 end
 _G.EntityScript["GetDisplayName"]=GetDisplayNameNew
 
+if TheNet.Talker then
+	_G.getmetatable(TheNet).__index.Talker = (function()
+		local oldTalker = _G.getmetatable(TheNet).__index.Talker
+		return function(self, message, entity, ... )
+			oldTalker(self, message, entity, ...)
+ 
+			local inst=entity and entity:GetGUID() or nil
+			inst=inst and _G.Ents[inst] or nil --определяем инстанс персонажа по entity
+			if inst and inst.components.talker.widget then --если он может говорить
+				if message and type(message)=="string" then
+					--Делаем одноразовую подмену для последующего задания текста, в котором осуществляем перевод.
+					local OldSetString = inscomponents.talker.widgetexSetString
+					function inst.components.talker.widgetext:SetString(str, ...)
+						str = KOTranslater(str, inst) or str --переводим
+						OldSetString(self, str, ...)
+						self.SetString = OldSetString
+					end
+				end
+			end
+		end
+	end)()
+end
 
 --saving announcement strings
 local announcekor = announcekor or {}
